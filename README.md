@@ -1,5 +1,4 @@
 <div align="center">
-  <img src="defaults/recruiter.png" alt="Collock recruiter" width="260" style="border-radius: 16px;" />
 
   # 🎙 Collock
 
