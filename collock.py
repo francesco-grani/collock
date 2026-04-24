@@ -26,14 +26,10 @@ float_init(theme=True, include_unstable_primary=False)
 # region PAGE CONFIG & CONSTANTS
 # =============================================================================
 
-# Default recruiter portrait — loaded from defaults/recruiter.png as a base64
-# data URI so it works without a network request and never expires.
+# Loaded as base64 data URI — works offline and never expires.
 with open(os.path.join(os.getcwd(), "defaults", "recruiter.png"), "rb") as _f:
     RECRUITER_IMAGE_URL = f"data:image/png;base64,{base64.b64encode(_f.read()).decode()}"
 
-# This must be the very first Streamlit call — sets the browser tab and layout.
-# initial_sidebar_state="collapsed" hides the sidebar by default for a
-# full-screen immersive feel. Users expand it via the arrow in the top-left.
 st.set_page_config(
     page_title="Collock",
     page_icon="🎙",
@@ -46,17 +42,6 @@ st.set_page_config(
 # =============================================================================
 # region CSS — DARK CINEMATIC THEME
 # =============================================================================
-# This is a large block of CSS injected into the page via st.markdown().
-# It does several things:
-#   1. Imports fonts: Plus Jakarta Sans (headings), Inter (body), JetBrains Mono (code)
-#   2. Hides Streamlit's default top bar, footer, and hamburger menu
-#   3. Makes all Streamlit containers transparent so our background image shows
-#   4. Styles sidebar, buttons, sliders, inputs, expanders to match the dark theme
-#   5. Defines reusable glass panel classes (.adventure-glass, .hud-panel, .chip)
-#      that we reference in the HTML blocks rendered below
-#
-# NOTE: this is a plain triple-quoted string (no "f" prefix), so CSS curly
-# braces {} are fine here without escaping.
 
 st.markdown('<style>' + open(os.path.join(os.getcwd(), 'collock-styles.css')).read() + '</style>', unsafe_allow_html=True)
 
@@ -66,13 +51,6 @@ st.markdown('<style>' + open(os.path.join(os.getcwd(), 'collock-styles.css')).re
 # =============================================================================
 # region BACKGROUND IMAGE
 # =============================================================================
-# We inject a fixed <div> with z-index: -1 that sits behind all Streamlit
-# content. It contains:
-#   1. The recruiter portrait — darkened and faded at the bottom with a mask
-#   2. A gradient overlay div (dark at bottom → transparent → semi-dark at top)
-#
-# Because this is an f-string, we reference RECRUITER_IMAGE_URL as {RECRUITER_IMAGE_URL}.
-# The inline CSS uses style="..." format (no braces that would conflict with f-strings).
 
 st.markdown(f"""
 <div class="bg-wrapper">
@@ -86,10 +64,6 @@ st.markdown(f"""
 # =============================================================================
 # region SESSION STATE INITIALISATION
 # =============================================================================
-# Streamlit re-runs the script top-to-bottom on every user interaction.
-# st.session_state persists values across those reruns.
-# The pattern "if key not in st.session_state" ensures we only set the
-# default value on the very first run — never on subsequent reruns.
 
 if "started" not in st.session_state:
     st.session_state.started = False            # Is an interview currently active?
@@ -630,8 +604,6 @@ if not st.session_state.session_ready:
 # =============================================================================
 # region SIDEBAR — CONFIGURATION & CONTROLS
 # =============================================================================
-# The sidebar is collapsed by default. Users open it with the arrow button
-# in the top-left corner of the screen.
 
 with st.sidebar:
 
@@ -754,9 +726,6 @@ interview_type = st.session_state.interview_type
 # =============================================================================
 # region PERSONA CHANGE
 # =============================================================================
-# prev_persona is None only on the very first load (skip generation then).
-# On every subsequent persona change, call Gemini image generation and rerun
-# so the new portrait appears in the background before the interview starts.
 
 if persona != st.session_state.prev_persona:
     st.session_state.persona = persona          # keep session state in sync so sidebar doesn't revert
@@ -870,24 +839,10 @@ if end_clicked and st.session_state.started:
 # =============================================================================
 # region MAIN AREA
 # =============================================================================
-# Rendered as raw HTML so we can match the exact style from the HTML export:
-# a translucent brand pill on the left and a HUD progress card on the right.
-# We use an f-string here so Python can inject the live progress values.
-# Inline styles avoid CSS-brace conflicts with f-strings.
-
-
 
 with st.container(key="main-wrapper", horizontal_alignment="center"):
     with st.container(key="chat", width=900):
         # region CHAT HISTORY
-        # =============================================================================
-        # MAIN AREA — CHAT HISTORY
-        # =============================================================================
-        # Mirrors the streamchat.py pattern: loop over display_messages and render
-        # each with st.chat_message() so Streamlit handles role avatars and bubbles.
-        # display_messages holds only parsed, user-visible content — the raw API
-        # history (with hidden prompts and FEEDBACK: prefixes) stays in st.session_state.messages.
-
         for message in st.session_state.display_messages:
             if message["role"] == "assistant":
                 with st.chat_message(message["role"], avatar=f"{st.session_state.get('recruiter_image_url', RECRUITER_IMAGE_URL)}"):
@@ -896,9 +851,6 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
-        # If a user answer was just submitted, the user message is already visible above.
-        # Now run the LLM call with a spinner inside the next assistant bubble, then rerun
-        # to replace the spinner with the real answer.
         if st.session_state.pending_llm_call:
             st.session_state.pending_llm_call = False
             with st.chat_message("assistant", avatar=f"{st.session_state.get('recruiter_image_url', RECRUITER_IMAGE_URL)}"):
@@ -930,16 +882,9 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
         # endregion
 
         # region SESSION SUMMARY
-        # =============================================================================
-        # MAIN AREA — SESSION SUMMARY
-        # =============================================================================
-        # Shown only after the user clicks End Session. Displays stats (questions
-        # answered, answers given, duration) and an AI-generated performance summary.
-
         if st.session_state.interview_ended and st.session_state.session_summary is not None:
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # Calculate session duration from the recorded start and end datetimes
             duration_str = "—"
             if st.session_state.start_time and st.session_state.end_time:
                 duration_str = format_duration(
@@ -947,18 +892,16 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
                     st.session_state.end_time,
                 )
 
-            # Stats row using Streamlit metric widgets
             m1, m2, m3 = st.columns(3)
             with m1:
                 st.metric("Questions", st.session_state.question_index)
             with m2:
-                # Subtract 1 for the hidden opening "Start" prompt we injected
+                # -1 to exclude the hidden opening prompt injected as a "user" message
                 user_turns = sum(1 for m in st.session_state.messages if m["role"] == "user")
                 st.metric("Answers given", max(0, user_turns - 1))
             with m3:
                 st.metric("Duration", duration_str)
 
-            # AI-written summary in a glass panel with an indigo tint
             safe_summary = html_lib.escape(st.session_state.session_summary)
             st.markdown(f"""
             <div class="adventure-glass summary-glass">
@@ -973,19 +916,6 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
         # endregion
 
         # region CHAT INPUT
-        # =============================================================================
-        # CHAT INPUT — answer submission, pinned to the bottom of the page
-        # =============================================================================
-        # st.chat_input is a special Streamlit widget that always renders at the very
-        # bottom of the viewport. It's disabled when no interview is running.
-        # When the user submits an answer:
-        #   1. Add it to the message history
-        #   2. Call the AI for feedback + next question
-        #   3. Parse the response into (feedback, question)
-        #   4. Update session state and trigger a page rerun
-
-        
-
         with st.container():
             user_answer = st.chat_input(
                 "Type your response…",
