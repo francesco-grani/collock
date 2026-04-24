@@ -11,9 +11,11 @@
 [ ] 2. Few-shot
 [ ] 3. Chain-of-thought
 [ ] 4. (2 more variations)
+    → 5 techniques documented in docs/prompts.md — pending review & integration
 [x] Write user prompt logic for interview prep
 [x] Tune at least one model parameter (temperature / top-p / etc.)
-[ ] Add at least one security guard (e.g. input validation)
+[x] Add at least one security guard (e.g. input validation)
+    → sanitize_input() blocks prompt injection on name + role fields
 [x] Ensure app works end-to-end (user can practice interviews)
 
 🟢 EASY (Optional Improvements)
@@ -23,7 +25,8 @@ To-do:
 
 Nice to have:
 [ ] Generate interviewer evaluation guidelines
-[ ] Get AI critique (usability, security, prompts)
+[x] Get AI critique (usability, security, prompts)
+    → "Critique this app" button in sidebar
 
 Extra:
 [ ] Improve prompts for specific domain (IT, finance, etc.)
@@ -36,12 +39,15 @@ To-do:
 [x] Read OpenRouter docs and implement 1 custom improvement
 [ ] Deploy app online
 [x] Add UI controls for model settings (temperature, top-p, etc.)
-[ ] Show cost estimation per request (via OpenRouter pricing)
+[x] Show cost estimation per request (via OpenRouter pricing)
 
 Nice-to-have:
-[ ] Allow user to select different LLMs
-[ ] Perform jailbreak testing on your app
-[ ] Document jailbreak results in Excel
+[x] Allow user to select different LLMs
+    → selectbox in LLM Settings expander (4 models)
+[x] Perform jailbreak testing on your app
+    → test/jailbreak_test.py — 8/8 passed
+[x] Document jailbreak results in Excel
+    → test/jailbreak_results.csv
 
 Extra:
 [ ] Implement 2 structured JSON outputs

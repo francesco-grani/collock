@@ -13,10 +13,18 @@
     } */
 
 /* Make the top header bar transparent instead of hiding it entirely,
-       so the sidebar collapse/expand arrow remains functional. */
+       so the sidebar collapse/expand arrow remains functional.
+       pointer-events: none lets clicks pass through the transparent bar to content below,
+       while re-enabling events on child buttons so rerun/menu still work. */
 header[data-testid="stHeader"] {
   background: transparent !important;
   border-bottom: none !important;
+  pointer-events: none !important;
+}
+
+header[data-testid="stHeader"] button,
+header[data-testid="stHeader"] a {
+  pointer-events: auto !important;
 }
 
 /* ---- Make all Streamlit containers transparent ---- */

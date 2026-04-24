@@ -50,20 +50,12 @@ streamlit run collock.py
 
 Get an API key at [openrouter.ai/keys](https://openrouter.ai/keys).
 
-## Project structure
+## Security testing
 
-```
-collock.py              # Main app (single-file Streamlit)
-collock-styles.css      # Dark cinematic theme
-defaults/
-  collock_content.py    # Personas, question banks, prompts
-  recruiter.png         # Default recruiter portrait
-docs/
-  backlog.md            # Feature backlog
-  prompts.md            # Prompt engineering techniques
-test/
-  jailbreak_test.py     # Playwright security test suite
-```
+Jailbreak testing was performed using a Playwright script that fires 8 known prompt injection attempts against a live session. **Result: 8/8 passed** — the model stayed in character on every attempt.
+
+- Test script: [`test/jailbreak_test.py`](test/jailbreak_test.py)
+- Results: [`test/jailbreak_results.csv`](test/jailbreak_results.csv)
 
 ---
 

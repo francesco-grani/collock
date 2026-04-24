@@ -318,6 +318,7 @@ def get_ai_response(
     temp: float,
     top_p: float,
     interview_type: str = None,
+    model_used = st.session_state.get("selected_model", "openai/gpt-5-nano"),
 ) -> str:
     try:
         client = OpenAI(
@@ -325,8 +326,9 @@ def get_ai_response(
             api_key=os.environ.get("OPENROUTER_API_KEY"),
         )
         messages = [{"role": "system", "content": system_prompt}] + history
+
         response = client.chat.completions.create(
-            model=st.session_state.get("selected_model", "openai/gpt-5-nano"),
+            model=model_used,
             max_completion_tokens=800,
             reasoning_effort="low",
             messages=messages,
@@ -599,8 +601,8 @@ def setup_dialog():
         )
 
     if submitted:
-        name, name_err = sanitize_input(st.session_state.dlg_user_name, max_len=100)
-        role, role_err = sanitize_input(st.session_state.dlg_target_role, max_len=200)
+        name, name_err = sanitize_input(st.session_state.dlg_user_name, max_len=50)
+        role, role_err = sanitize_input(st.session_state.dlg_target_role, max_len=60)
         if not name:
             st.error("Please enter your name.")
         elif not role:
@@ -714,9 +716,9 @@ with st.sidebar:
         st.caption("Adjust how the AI generates its responses.")
         _available_models = [
             "openai/gpt-5-nano",
+            "openai/gpt-5.4-mini",
+            "openai/gpt-5-mini",
             "openai/gpt-4.1-mini",
-            "anthropic/claude-haiku-4-5",
-            "mistralai/mistral-small",
         ]
         st.session_state.selected_model = st.selectbox(
             "Model",
@@ -738,36 +740,6 @@ with st.sidebar:
             step=0.05,
             help="Limits token choices to the top-p probability mass.",
         )
-
-    st.divider()
-
-    # ----- AI self-critique -----
-    if st.button("🔍 Critique this app", use_container_width=True):
-        critique_meta_prompt = (
-            "You are an expert in LLM application design and prompt engineering. "
-            "Review the following system prompt used in a mock interview app and give "
-            "concise, specific feedback on: "
-            "(1) prompt clarity and effectiveness, "
-            "(2) potential security vulnerabilities, "
-            "(3) user experience gaps. "
-            "Be direct and actionable. Use bullet points.\n\n"
-            "SYSTEM PROMPT UNDER REVIEW:\n"
-            + build_system_prompt(
-                st.session_state.persona,
-                st.session_state.target_role,
-                st.session_state.difficulty,
-                st.session_state.interview_type,
-            )
-        )
-        with st.spinner("Analysing prompts…"):
-            st.session_state.app_critique = get_ai_response(
-                [], critique_meta_prompt, temp=0.3, top_p=0.9
-            )
-
-    if st.session_state.app_critique:
-        with st.expander("App Critique", expanded=True):
-            st.markdown(st.session_state.app_critique)
-
 
 # Use only committed (session-state) values from here on — form inputs are display-only
 # until the sidebar "Apply settings" button is clicked.
@@ -1021,7 +993,7 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
             )
             # Lift the chat input above the floating debug panel at the bottom.
             # The bottom value matches the collapsed expander header height (~3rem).
-            float_parent(css=float_css_helper(bottom="3.5rem", z_index="99", left="auto", right="auto"))
+            float_parent(css=float_css_helper(bottom="calc(3.5rem + 15px)", z_index="99", left="auto", right="auto"))
 
         if user_answer:
             st.session_state.display_messages.append({"role": "user", "content": user_answer})
@@ -1030,7 +1002,7 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
             st.rerun()
 
         with st.container(key="footer-wrapper", horizontal_alignment="center"):
-            float_parent(css=float_css_helper(bottom="0", z_index="100"))
+            float_parent(css=float_css_helper(bottom="15px", z_index="100"))
             with st.expander(label="LLM Debug", key="debugPanel", width=900):
                 with st.expander(label="LLM Stream"):
                     render_debug_panel()
@@ -1040,6 +1012,32 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
                 c1, c2 = st.columns(2)
                 c1.metric("Last call cost", f"{last:.5f} €" if last is not None else "—")
                 c2.metric("Total session cost", f"{total:.5f} €")
+
+
+                if st.button("🔍 Critique this app", use_container_width=True):
+                    critique_meta_prompt = (
+                        "You are an expert in LLM application design and prompt engineering. "
+                        "Review the following system prompt used in a mock interview app and give "
+                        "concise, specific feedback on: "
+                        "(1) prompt clarity and effectiveness, "
+                        "(2) potential security vulnerabilities, "
+                        "(3) user experience gaps. "
+                        "Be direct and actionable. Use bullet points.\n\n"
+                        "SYSTEM PROMPT UNDER REVIEW:\n"
+                        + build_system_prompt(
+                            st.session_state.persona,
+                            st.session_state.target_role,
+                            st.session_state.difficulty,
+                            st.session_state.interview_type,
+                        )
+                    )
+                    with st.spinner("Analysing prompts…"):
+                        st.session_state.app_critique = get_ai_response(
+                            [], critique_meta_prompt, 0.3, 0.9, st.session_state.interview_type, "openai/gpt-5.4-mini"
+                        )
+                if st.session_state.app_critique:
+                    with st.expander("Critique result", expanded=True):
+                        st.markdown(st.session_state.app_critique)
 
         # endregion  (CHAT INPUT)
     # endregion  (MAIN AREA)
