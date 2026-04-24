@@ -198,6 +198,9 @@ if "last_call_cost" not in st.session_state:
 if "total_session_cost" not in st.session_state:
     st.session_state.total_session_cost = 0.0
 
+if "app_critique" not in st.session_state:
+    st.session_state.app_critique = None
+
 
 # endregion
 
@@ -720,6 +723,35 @@ with st.sidebar:
             step=0.05,
             help="Limits token choices to the top-p probability mass.",
         )
+
+    st.divider()
+
+    # ----- AI self-critique -----
+    if st.button("🔍 Critique this app", use_container_width=True):
+        critique_meta_prompt = (
+            "You are an expert in LLM application design and prompt engineering. "
+            "Review the following system prompt used in a mock interview app and give "
+            "concise, specific feedback on: "
+            "(1) prompt clarity and effectiveness, "
+            "(2) potential security vulnerabilities, "
+            "(3) user experience gaps. "
+            "Be direct and actionable. Use bullet points.\n\n"
+            "SYSTEM PROMPT UNDER REVIEW:\n"
+            + build_system_prompt(
+                st.session_state.persona,
+                st.session_state.target_role,
+                st.session_state.difficulty,
+                st.session_state.interview_type,
+            )
+        )
+        with st.spinner("Analysing prompts…"):
+            st.session_state.app_critique = get_ai_response(
+                [], critique_meta_prompt, temp=0.3, top_p=0.9
+            )
+
+    if st.session_state.app_critique:
+        with st.expander("App Critique", expanded=True):
+            st.markdown(st.session_state.app_critique)
 
 
 # Use only committed (session-state) values from here on — form inputs are display-only
