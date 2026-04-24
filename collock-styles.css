@@ -85,12 +85,6 @@ html {
   margin-bottom: 0.1rem;
 }
 
-.sidebar-subtitle {
-  color: #94a3b8;
-  font-size: 0.82rem;
-  margin-bottom: 1.2rem;
-}
-
 /* ============================================================
        PROGRESS BAR — indigo with glow, matching the HTML design
        ============================================================ */
@@ -293,39 +287,6 @@ html {
   -webkit-backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 1rem;
-}
-
-/* Slide-up entrance animation for the dialogue card */
-.dialogue-slide-up {
-  animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes slideUp {
-  from {
-    transform: translateY(16px);
-    opacity: 0;
-  }
-
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-/* Small badge chip for language / difficulty labels */
-.chip {
-  display: inline-block;
-  border-radius: 999px;
-  padding: 0.15rem 0.65rem;
-  margin-right: 0.35rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  background: rgba(99, 102, 241, 0.18);
-  color: #818cf8;
-  border: 1px solid rgba(99, 102, 241, 0.28);
-  font-family: "JetBrains Mono", monospace;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
 }
 
 /* ============================================================
@@ -583,14 +544,6 @@ html {
   padding: 0;
   background: transparent;
   border: none;
-}
-
-/* Footer */
-
-.st-key-debugPanel {
-  color: white;
-  position: fixed;
-  bottom: 10px;
 }
 
 .stTooltipIcon svg {

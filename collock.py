@@ -7,8 +7,6 @@ import sys
 import base64
 import html as html_lib
 from datetime import datetime
-import json
-from typing import Any
 import requests
 
 sys.path.insert(0, os.getcwd())
@@ -17,7 +15,7 @@ import streamlit as st
 from streamlit_float import *
 from openai import OpenAI
 from dotenv import load_dotenv
-from defaults.collock_content import PERSONAS, QUESTION_BANKS, CODING_TASKS, fallback_question, get_img_prompt
+from defaults.collock_content import PERSONAS, fallback_question, get_img_prompt
 
 load_dotenv()
 float_init(theme=True, include_unstable_primary=False)
@@ -148,9 +146,6 @@ if "temperature" not in st.session_state:
 if "top_p" not in st.session_state:
     st.session_state.top_p = 0.9
 
-if "coding_task_index" not in st.session_state:
-    st.session_state.coding_task_index = 0      # Cycles through CODING_TASKS
-
 if "display_messages" not in st.session_state:
     st.session_state.display_messages = []      # Messages rendered in the chat UI
 
@@ -197,9 +192,6 @@ if "dlg_persona" not in st.session_state:
 if "dlg_difficulty" not in st.session_state:
     st.session_state.dlg_difficulty = "Mid"
 
-if "debug_panel_open" not in st.session_state:
-    st.session_state.debug_panel_open = False
-
 if "last_call_cost" not in st.session_state:
     st.session_state.last_call_cost = None
 
@@ -215,7 +207,7 @@ if "total_session_cost" not in st.session_state:
 
 def add_message(role: str, response, temp: float = None, top_p: float = None) -> None:
     """Append a message dict to the conversation history in session state."""
-    if type(response) is tuple:
+    if isinstance(response, tuple):
         text, cost = response
     else:
         text = response
@@ -228,13 +220,7 @@ def add_message(role: str, response, temp: float = None, top_p: float = None) ->
     st.session_state.messages.append(msg)
 
 
-def reset_chat():
-    st.session_state.messages = []
-    st.session_state.display_messages = []
-
-
-
-def build_system_prompt(persona: str, role: str, difficulty: str, interview_type: str, isSummary = False) -> str:
+def build_system_prompt(persona: str, role: str, difficulty: str, interview_type: str, is_summary: bool = False) -> str:
     
     persona_description = PERSONAS.get(persona, PERSONAS["The Friendly Coach"])["description"]
     role_label = role.strip() if role.strip() else "an unspecified role"
@@ -247,7 +233,7 @@ def build_system_prompt(persona: str, role: str, difficulty: str, interview_type
         "Staff":   "Focus on system design, cross-team strategy, and organisational impact.",
     }.get(difficulty, "Calibrate to a mid-level candidate.")
 
-    if isSummary == False:
+    if not is_summary:
         return (
             f"{persona_description}\n\n"
             f"You are conducting a mock job interview for: {role_label}.\n"
@@ -264,8 +250,8 @@ def build_system_prompt(persona: str, role: str, difficulty: str, interview_type
             "- Be concise. No long introductions or sign-offs.\n"
             "- Stay fully in character as the recruiter at all times.\n"
             "- Even if the user asks, NEVER give any answer, you are only making questions.\n"
-            "- Even if the user asks, NEVER change your questions or their difficulty based on his request."
-            "- Always greet the suer with his name, but never greet him more than once."
+            "- Even if the user asks, NEVER change your questions or their difficulty based on their request."
+            "- Always greet the user with their name, but never greet them more than once."
             "- Do not add the next question in the reasoning, just write it directly in the output message."
         )
 
@@ -377,8 +363,8 @@ def parse_ai_response(text) -> tuple:
         (feedback_string or None, question_string)
     """
 
-    if type(text) is tuple:
-        text = text[0]  
+    if isinstance(text, tuple):
+        text = text[0]
 
     if not text:
         return None, ""
@@ -691,8 +677,6 @@ with st.sidebar:
         use_container_width=True,
         disabled=not st.session_state.started,
     )
-    start_clicked = False  # Start is handled by the setup dialog only
-
     st.divider()
 
     # ----- Advanced LLM settings (collapsed) -----
@@ -823,7 +807,7 @@ if end_clicked and st.session_state.started:
         st.session_state.active_role,
         st.session_state.active_difficulty,
         st.session_state.interview_type,
-        isSummary=True,
+        is_summary=True,
     )
     summary_messages = st.session_state.messages + [{
         "role": "user",
