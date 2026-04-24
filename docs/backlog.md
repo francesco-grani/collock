@@ -37,7 +37,8 @@ Extra:
 To-do:
 [x] Implement image generation feature
 [x] Read OpenRouter docs and implement 1 custom improvement
-[ ] Deploy app online
+[x] Deploy app online
+    → https://collock.streamlit.app (Streamlit Community Cloud)
 [x] Add UI controls for model settings (temperature, top-p, etc.)
 [x] Show cost estimation per request (via OpenRouter pricing)
 
