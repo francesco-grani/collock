@@ -6,6 +6,7 @@ import os
 import html as html_lib
 from datetime import datetime
 import json
+from typing import Any
 import requests
 
 import streamlit as st
@@ -203,89 +204,21 @@ if "total_session_cost" not in st.session_state:
 # HELPER FUNCTIONS
 # =============================================================================
 
-def add_message(role: str, text: str) -> None:
+def add_message(role: str, response: tuple) -> None:
     """Append a message dict to the conversation history in session state."""
-    st.session_state.messages.append({"role": role, "content": text})
+    
+    if type(response) is tuple:
+        text,cost = response
+    else:
+        text = response
+        cost = 0.0
+    st.session_state.messages.append({"role": role, "content": text, "cost": cost})
+
 
 def reset_chat():
     st.session_state.messages = []
+    st.session_state.display_messages = []
 
-
-def format_duration(start: datetime, end: datetime) -> str:
-    """
-    Return a human-readable duration string, e.g. '8 min 34 sec' or '45 sec'.
-    Used in the session summary after the interview ends.
-    """
-    total_seconds = int((end - start).total_seconds())
-    minutes, seconds = divmod(total_seconds, 60)
-    if minutes > 0:
-        return f"{minutes} min {seconds} sec"
-    return f"{seconds} sec"
-
-
-def render_debug_panel():
-    with st.container(height=600):
-        st.markdown('<div class="debug-panel-header">LLM Stream</div>', unsafe_allow_html=True)
-        messages = st.session_state.get("messages", [])
-        if not messages:
-            st.caption("No messages yet. Start an interview.")
-        else:
-            for msg in messages:
-                role = msg.get("role", "unknown")
-                content = msg.get("content", "")
-                MAX_SYS = 300
-                if role == "system":
-                    display = content[:MAX_SYS] + f"\n[…{len(content) - MAX_SYS} chars]" if len(content) > MAX_SYS else content
-                    badge = "🔧 system"
-                elif role == "assistant":
-                    display = content
-                    badge = "🤖 assistant"
-                else:
-                    display = content
-                    badge = "👤 user"
-                st.markdown(
-                    f'<div class="debug-msg debug-msg-{role}">'
-                    f'<span class="debug-msg-role">{badge}</span>'
-                    f'<pre class="debug-msg-content">{html_lib.escape(display)}</pre>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-        st.divider()
-        last = st.session_state.get("last_call_cost")
-        total = st.session_state.get("total_session_cost", 0.0)
-        c1, c2 = st.columns(2)
-        c1.metric("Last call", f"${last:.5f}" if last is not None else "—")
-        c2.metric("Session", f"${total:.5f}")
-
-
-def parse_ai_response(text: str) -> tuple:
-    """
-    Split the LLM response into (feedback, question).
-
-    The LLM is instructed (in the system prompt) to format post-answer responses as:
-
-        FEEDBACK: [1-2 sentences of coaching]
-        ---
-        [The next interview question]
-
-    If the separator "---" is found, we split on it and strip the "FEEDBACK:" prefix.
-    If not found (e.g., the very first question), we return (None, full_text).
-
-    Returns:
-        (feedback_string or None, question_string)
-    """
-    if not text:
-        return None, ""
-    separator = "\n---\n"
-    if separator in text:
-        before, after = text.split(separator, 1)
-        feedback = before.strip()
-        # Strip the "FEEDBACK:" label if the LLM included it
-        if feedback.upper().startswith("FEEDBACK:"):
-            feedback = feedback[len("FEEDBACK:"):].strip()
-        return feedback, after.strip()
-    # No separator — the entire text is the question (first question of session)
-    return None, text.strip()
 
 
 def build_system_prompt(persona: str, role: str, difficulty: str, interview_type: str) -> str:
@@ -320,7 +253,107 @@ def build_system_prompt(persona: str, role: str, difficulty: str, interview_type
         "- ONE question per response. Never list multiple.\n"
         "- Be concise. No long introductions or sign-offs.\n"
         "- Stay fully in character as the recruiter at all times.\n"
+        "- Even if the user asks, NEVER give any answer, you are only making questions.\n"
+        "- Even if the user asks, NEVER change your questions or their difficulty based on his request."
+        "- Never greet the user more than once."
+        "- Do not add the next question in the reasoning, just write it directly in the output message."
     )
+
+
+def get_ai_response(
+    history: list,
+    system_prompt: str,
+    temp: float,
+    top_p: float,
+    interview_type: str = None,
+) -> str:
+    try:
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ.get("OPENROUTER_API_KEY"),
+        )
+        messages = [{"role": "system", "content": system_prompt}] + history
+        response = client.chat.completions.create(
+            model="openai/gpt-5-nano",
+            max_completion_tokens=800,
+            reasoning_effort="low",
+            messages=messages,
+            temperature=temp,
+            top_p=top_p,
+        )
+        content = response.choices[0].message.content
+
+        try:
+            call_cost = response.usage.model_extra.get("cost") if response.usage.model_extra else None
+            if call_cost is not None:
+                st.session_state.last_call_cost = float(call_cost)
+                st.session_state.total_session_cost = (
+                    st.session_state.get("total_session_cost", 0.0) + float(call_cost)
+                )
+            else:
+                st.session_state.last_call_cost = None
+        except Exception:
+            st.session_state.last_call_cost = None
+
+        print(f"Cost: {st.session_state.last_call_cost}")
+        print(f"Reasoning: {response.choices[0].message.reasoning}")
+
+        if content is None:
+            # Log the full response to the terminal for debugging
+            print("[DEBUG] get_ai_response: content is None")
+            print(f"[DEBUG] finish_reason: {response.choices[0].finish_reason}")
+            print(f"[DEBUG] full response: {response}")
+            if interview_type:
+                return fallback_question(interview_type)
+            return "⚠ The model returned an empty response. Please try again."
+
+        return content, call_cost
+
+    except Exception as error:
+        err = str(error)
+        if "401" in err or "authentication" in err.lower():
+            return "API key error — check OPENROUTER_API_KEY in your .env file."
+        if "429" in err or "rate limit" in err.lower():
+            return "Rate limit reached. Please wait a moment and try again."
+        if interview_type:
+            return fallback_question(interview_type)
+        return f"Connection error: {err}"
+
+
+
+def parse_ai_response(text) -> tuple:
+    """
+    Split the LLM response into (feedback, question).
+
+    The LLM is instructed (in the system prompt) to format post-answer responses as:
+
+        FEEDBACK: [1-2 sentences of coaching]
+        ---
+        [The next interview question]
+
+    If the separator "---" is found, we split on it and strip the "FEEDBACK:" prefix.
+    If not found (e.g., the very first question), we return (None, full_text).
+
+    Returns:
+        (feedback_string or None, question_string)
+    """
+
+    if type(text) is tuple:
+        text = text[0]  
+
+    if not text:
+        return None, ""
+    separator = "\n---\n"
+    if separator in text:
+        before, after = text.split(separator, 1)
+        feedback = before.strip()
+        # Strip the "FEEDBACK:" label if the LLM included it
+        if feedback.upper().startswith("FEEDBACK:"):
+            feedback = feedback[len("FEEDBACK:"):].strip()
+        return feedback, after.strip()
+    # No separator — the entire text is the question (first question of session)
+    return None, text.strip()
+
 
 
 def generate_recruiter_image(persona_name: str) -> str | None:
@@ -360,64 +393,49 @@ def generate_recruiter_image(persona_name: str) -> str | None:
         print(f"Error generating recruiter image: {e}")
         return None
 
+def format_duration(start: datetime, end: datetime) -> str:
+    """
+    Return a human-readable duration string, e.g. '8 min 34 sec' or '45 sec'.
+    Used in the session summary after the interview ends.
+    """
+    total_seconds = int((end - start).total_seconds())
+    minutes, seconds = divmod(total_seconds, 60)
+    if minutes > 0:
+        return f"{minutes} min {seconds} sec"
+    return f"{seconds} sec"
 
-def get_ai_response(
-    history: list,
-    system_prompt: str,
-    temp: float,
-    top_p: float,
-    interview_type: str = None,
-) -> str:
-    try:
-        client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=os.environ.get("OPENROUTER_API_KEY"),
-        )
-        messages = [{"role": "system", "content": system_prompt}] + history
-        response = client.chat.completions.create(
-            model="openai/gpt-5-nano",
-            max_completion_tokens=800,
-            reasoning_effort="low",
-            messages=messages,
-            temperature=temp,
-            top_p=top_p,
-        )
-        content = response.choices[0].message.content
 
-        try:
-            call_cost = response.usage.model_extra.get("cost") if response.usage.model_extra else None
-            if call_cost is not None:
-                st.session_state.last_call_cost = float(call_cost)
-                st.session_state.total_session_cost = (
-                    st.session_state.get("total_session_cost", 0.0) + float(call_cost)
+def render_debug_panel():
+    with st.container(height=600):
+        st.markdown('<div class="debug-panel-header">LLM Stream</div>', unsafe_allow_html=True)
+        messages = st.session_state.get("messages", [])
+        if not messages:
+            st.caption("No messages yet. Start an interview.")
+        else:
+            for msg in messages:
+                role = msg.get("role", "unknown")
+                content = msg.get("content", "")
+                cost = msg.get("cost", 0.0)
+                MAX_SYS = 300
+                if role == "system":
+                    display = content[:MAX_SYS] + f"\n[…{len(content) - MAX_SYS} chars]" if len(content) > MAX_SYS else content
+                    badge = "🔧 system"
+                    cost = cost
+                elif role == "assistant":
+                    display = content
+                    badge = "🤖 assistant"
+                    cost = cost
+                else:
+                    display = content
+                    badge = "👤 user"
+                st.markdown(
+                    f'<div class="debug-msg debug-msg-{role}">'
+                    f'<span class="debug-msg-role">{badge}</span>'
+                    f'<pre class="debug-msg-content">{html_lib.escape(display)}</pre>'
+                    f'<span>€{cost:.5f}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
                 )
-            else:
-                st.session_state.last_call_cost = None
-        except Exception:
-            st.session_state.last_call_cost = None
-        print(f"Cost: {st.session_state.last_call_cost}")
-        print(f"Reasoning: {response.choices[0].message.reasoning}")
-
-        if content is None:
-            # Log the full response to the terminal for debugging
-            print("[DEBUG] get_ai_response: content is None")
-            print(f"[DEBUG] finish_reason: {response.choices[0].finish_reason}")
-            print(f"[DEBUG] full response: {response}")
-            if interview_type:
-                return fallback_question(interview_type)
-            return "⚠ The model returned an empty response. Please try again."
-        return content
-
-    except Exception as error:
-        err = str(error)
-        if "401" in err or "authentication" in err.lower():
-            return "API key error — check OPENROUTER_API_KEY in your .env file."
-        if "429" in err or "rate limit" in err.lower():
-            return "Rate limit reached. Please wait a moment and try again."
-        if interview_type:
-            return fallback_question(interview_type)
-        return f"Connection error: {err}"
-
 
 # =============================================================================
 # SETUP DIALOG — shown at startup and after Reset
@@ -486,6 +504,31 @@ if st.session_state.get("pending_start"):
 # in the top-left corner of the screen.
 
 with st.sidebar:
+
+    progress_pct = min(
+    int(st.session_state.question_index / st.session_state.question_total * 100),
+    100,
+)
+    st.markdown(f"""
+<div class="hud-top-bar">
+    <div class="hud-top-right">
+        <div class="brand-pill">
+            <span class="brand-pill-icon">🎙</span>
+            <span class="brand-pill-name">Collock</span>
+        </div>
+        <div class="hud-panel progress-card">
+            <div class="progress-header">
+                <span class="progress-label">Progress</span>
+                <span class="progress-count">{st.session_state.question_index} / {st.session_state.question_total}</span>
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill" style="width:{progress_pct}%;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
     # Brand heading
     st.header("**Settings**")
 
@@ -735,198 +778,129 @@ if reset_clicked:
 # We use an f-string here so Python can inject the live progress values.
 # Inline styles avoid CSS-brace conflicts with f-strings.
 
-progress_pct = min(
-    int(st.session_state.question_index / st.session_state.question_total * 100),
-    100,
-)
-
-hud_col, panel_col = st.columns([3, 1])
-
-with hud_col:
-    st.markdown(f"""
-<div class="hud-top-bar">
-    <div class="hud-top-right">
-        <div class="brand-pill">
-            <span class="brand-pill-icon">🎙</span>
-            <span class="brand-pill-name">Collock</span>
-        </div>
-        <div class="hud-panel progress-card">
-            <div class="progress-header">
-                <span class="progress-label">Progress</span>
-                <span class="progress-count">{st.session_state.question_index} / {st.session_state.question_total}</span>
-            </div>
-            <div class="progress-track">
-                <div class="progress-fill" style="width:{progress_pct}%;"></div>
-            </div>
-        </div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-with panel_col:
-    toggle_label = "✕ Close debug" if st.session_state.debug_panel_open else "🔍 LLM debug"
-    if st.button(toggle_label, key="debug_toggle", use_container_width=True):
-        st.session_state.debug_panel_open = not st.session_state.debug_panel_open
-        st.rerun()
-    if st.session_state.debug_panel_open:
-        render_debug_panel()
 
 
-# =============================================================================
-# MAIN AREA — CHAT HISTORY
-# =============================================================================
-# Mirrors the streamchat.py pattern: loop over display_messages and render
-# each with st.chat_message() so Streamlit handles role avatars and bubbles.
-# display_messages holds only parsed, user-visible content — the raw API
-# history (with hidden prompts and FEEDBACK: prefixes) stays in st.session_state.messages.
+with st.container(key="main-wrapper", horizontal_alignment="center"):
+    with st.container(key="chat", width=900):
+        # =============================================================================
+        # MAIN AREA — CHAT HISTORY
+        # =============================================================================
+        # Mirrors the streamchat.py pattern: loop over display_messages and render
+        # each with st.chat_message() so Streamlit handles role avatars and bubbles.
+        # display_messages holds only parsed, user-visible content — the raw API
+        # history (with hidden prompts and FEEDBACK: prefixes) stays in st.session_state.messages.
 
-for message in st.session_state.display_messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# If a user answer was just submitted, the user message is already visible above.
-# Now run the LLM call with a spinner inside the next assistant bubble, then rerun
-# to replace the spinner with the real answer.
-if st.session_state.pending_llm_call:
-    st.session_state.pending_llm_call = False
-    with st.chat_message("assistant"):
-        with st.spinner("Thinking…"):
-            _prompt = build_system_prompt(
-                st.session_state.active_persona,
-                st.session_state.active_role,
-                st.session_state.active_difficulty,
-                st.session_state.interview_type,
-            )
-            _raw = get_ai_response(
-                st.session_state.messages, _prompt,
-                st.session_state.temperature, st.session_state.top_p,
-                interview_type=st.session_state.interview_type,
-            )
-    add_message("assistant", _raw)
-    _feedback, _question = parse_ai_response(_raw)
-    if _feedback:
-        st.session_state.last_feedback = _feedback
-    st.session_state.current_question = _question
-    st.session_state.display_messages.append({"role": "assistant", "content": _question})
-    st.session_state.question_index = min(
-        st.session_state.question_index + 1,
-        st.session_state.question_total,
-    )
-    st.rerun()
-
-
-# =============================================================================
-# MAIN AREA — CODING TASK EXPANDER
-# =============================================================================
-# Only rendered during an active interview. Collapsed by default so it stays
-# out of the way until the recruiter assigns a coding exercise.
-
-if st.session_state.started and st.session_state.question_coding == True:
-    task_idx = st.session_state.coding_task_index % len(CODING_TASKS)
-    task = CODING_TASKS[task_idx]
-
-    with st.expander(f"💻  Coding Task: {task['title']}", expanded=False):
-        # Language and difficulty chips
-        st.markdown(
-            f"<span class='chip'>{task['language']}</span>"
-            f"<span class='chip'>{task['difficulty']}</span>",
-            unsafe_allow_html=True,
-        )
-        st.markdown(f"**Task:** {task['description']}")
-        st.code(task["starter_code"], language="python")
-
-        solution = st.text_area(
-            "Your solution",
-            height=140,
-            placeholder="Write your Python code here…",
-            key=f"solution_{task_idx}",   # Unique key prevents state collisions across tasks
-        )
-        if st.button("Submit solution", key=f"submit_{task_idx}", type="primary"):
-            if solution.strip():
-                code_msg = f"Here is my solution for '{task['title']}':\n```python\n{solution}\n```"
-                add_message("user", code_msg)
-                st.session_state.display_messages.append({"role": "user", "content": code_msg})
-                prompt = build_system_prompt(
-                    st.session_state.active_persona,
-                    st.session_state.active_role,
-                    st.session_state.active_difficulty,
-                    st.session_state.interview_type,
-                )
-                raw = get_ai_response(
-                    st.session_state.messages, prompt,
-                    st.session_state.temperature, st.session_state.top_p,
-                    interview_type=st.session_state.interview_type,
-                )
-                add_message("assistant", raw)
-                feedback, question = parse_ai_response(raw)
-                if feedback:
-                    st.session_state.last_feedback = feedback
-                st.session_state.current_question = question
-                st.session_state.display_messages.append({"role": "assistant", "content": question})
-                st.session_state.coding_task_index += 1
-                st.rerun()
+        for message in st.session_state.display_messages:
+            if message["role"] == "assistant":
+                with st.chat_message(message["role"], avatar=f"{st.session_state.get('recruiter_image_url', RECRUITER_IMAGE_URL)}"):
+                    st.markdown(message["content"])
             else:
-                st.warning("Write a solution before submitting.")
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+
+        # If a user answer was just submitted, the user message is already visible above.
+        # Now run the LLM call with a spinner inside the next assistant bubble, then rerun
+        # to replace the spinner with the real answer.
+        if st.session_state.pending_llm_call:
+            st.session_state.pending_llm_call = False
+            with st.chat_message("assistant", avatar=f"{st.session_state.get('recruiter_image_url', RECRUITER_IMAGE_URL)}"):
+                with st.spinner("Thinking…"):
+                    _prompt = build_system_prompt(
+                        st.session_state.active_persona,
+                        st.session_state.active_role,
+                        st.session_state.active_difficulty,
+                        st.session_state.interview_type,
+                    )
+                    _raw = get_ai_response(
+                        st.session_state.messages, _prompt,
+                        st.session_state.temperature, st.session_state.top_p,
+                        interview_type=st.session_state.interview_type,
+                    )
+            add_message("assistant", _raw)
+            _feedback, _question = parse_ai_response(_raw)
+            if _feedback:
+                st.session_state.last_feedback = _feedback
+            st.session_state.current_question = _question
+            st.session_state.display_messages.append({"role": "assistant", "content": _question})
+            st.session_state.question_index = min(
+                st.session_state.question_index + 1,
+                st.session_state.question_total,
+            )
+            st.rerun()
 
 
-# =============================================================================
-# MAIN AREA — SESSION SUMMARY
-# =============================================================================
-# Shown only after the user clicks End Session. Displays stats (questions
-# answered, answers given, duration) and an AI-generated performance summary.
+        # =============================================================================
+        # MAIN AREA — SESSION SUMMARY
+        # =============================================================================
+        # Shown only after the user clicks End Session. Displays stats (questions
+        # answered, answers given, duration) and an AI-generated performance summary.
 
-if st.session_state.interview_ended and st.session_state.session_summary:
-    st.markdown("<br>", unsafe_allow_html=True)
+        if st.session_state.interview_ended and st.session_state.session_summary:
+            st.markdown("<br>", unsafe_allow_html=True)
 
-    # Calculate session duration from the recorded start and end datetimes
-    duration_str = "—"
-    if st.session_state.start_time and st.session_state.end_time:
-        duration_str = format_duration(
-            st.session_state.start_time,
-            st.session_state.end_time,
+            # Calculate session duration from the recorded start and end datetimes
+            duration_str = "—"
+            if st.session_state.start_time and st.session_state.end_time:
+                duration_str = format_duration(
+                    st.session_state.start_time,
+                    st.session_state.end_time,
+                )
+
+            # Stats row using Streamlit metric widgets
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                st.metric("Questions", st.session_state.question_index)
+            with m2:
+                # Subtract 1 for the hidden opening "Start" prompt we injected
+                user_turns = sum(1 for m in st.session_state.messages if m["role"] == "user")
+                st.metric("Answers given", max(0, user_turns - 1))
+            with m3:
+                st.metric("Duration", duration_str)
+
+            # AI-written summary in a glass panel with an indigo tint
+            safe_summary = html_lib.escape(st.session_state.session_summary)
+            st.markdown(f"""
+            <div class="adventure-glass summary-glass">
+                <div class="summary-label">Session Summary</div>
+                <p class="summary-text">{safe_summary}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.caption("Click  ↺ Reset  in the sidebar to start a new session.")
+
+
+        # =============================================================================
+        # CHAT INPUT — answer submission, pinned to the bottom of the page
+        # =============================================================================
+        # st.chat_input is a special Streamlit widget that always renders at the very
+        # bottom of the viewport. It's disabled when no interview is running.
+        # When the user submits an answer:
+        #   1. Add it to the message history
+        #   2. Call the AI for feedback + next question
+        #   3. Parse the response into (feedback, question)
+        #   4. Update session state and trigger a page rerun
+
+        user_answer = st.chat_input(
+            "Type your response…",
+            disabled=not st.session_state.started,
         )
 
-    # Stats row using Streamlit metric widgets
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.metric("Questions", st.session_state.question_index)
-    with m2:
-        # Subtract 1 for the hidden opening "Start" prompt we injected
-        user_turns = sum(1 for m in st.session_state.messages if m["role"] == "user")
-        st.metric("Answers given", max(0, user_turns - 1))
-    with m3:
-        st.metric("Duration", duration_str)
+        if user_answer:
+            st.session_state.display_messages.append({"role": "user", "content": user_answer})
+            if st.session_state.question_index >= st.session_state.question_total:
+                end_clicked = True
+            else:
+                add_message("user", user_answer)
+                st.session_state.pending_llm_call = True
+                st.rerun()
 
-    # AI-written summary in a glass panel with an indigo tint
-    safe_summary = html_lib.escape(st.session_state.session_summary)
-    st.markdown(f"""
-    <div class="adventure-glass summary-glass">
-        <div class="summary-label">Session Summary</div>
-        <p class="summary-text">{safe_summary}</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.caption("Click  ↺ Reset  in the sidebar to start a new session.")
-
-
-# =============================================================================
-# CHAT INPUT — answer submission, pinned to the bottom of the page
-# =============================================================================
-# st.chat_input is a special Streamlit widget that always renders at the very
-# bottom of the viewport. It's disabled when no interview is running.
-# When the user submits an answer:
-#   1. Add it to the message history
-#   2. Call the AI for feedback + next question
-#   3. Parse the response into (feedback, question)
-#   4. Update session state and trigger a page rerun
-
-user_answer = st.chat_input(
-    "Type your response…",
-    disabled=not st.session_state.started,
-)
-
-if user_answer:
-    st.session_state.display_messages.append({"role": "user", "content": user_answer})
-    add_message("user", user_answer)
-    st.session_state.pending_llm_call = True
-    st.rerun()
+    with st.container(key="footer-wrapper", horizontal_alignment="center"):
+        with st.expander(label="LLM Debug", key="debugPanel", width=900):
+            with st.expander(label="LLM Stream"):
+                render_debug_panel()
+            
+            last = st.session_state.get("last_call_cost")
+            total = st.session_state.get("total_session_cost", 0.0)
+            c1, c2 = st.columns(2)
+            c1.metric("Last call cost", f"{last:.5f} €" if last is not None else "—")
+            c2.metric("Total session cost", f"{total:.5f} €")
