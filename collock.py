@@ -205,6 +205,24 @@ if "total_session_cost" not in st.session_state:
 # region HELPER FUNCTIONS
 # =============================================================================
 
+INJECTION_PATTERNS = [
+    "ignore previous", "ignore all", "forget your", "you are now",
+    "###", "[inst]", "[system]", "system:", "disregard",
+    "pretend you", "act as if", "new instructions",
+]
+
+def sanitize_input(text: str, max_len: int) -> tuple[str, str | None]:
+    """Return (cleaned_text, error_or_None). Blocks prompt injection attempts."""
+    text = text.strip()
+    if len(text) > max_len:
+        return text, f"Input too long (max {max_len} characters)."
+    lower = text.lower()
+    for pattern in INJECTION_PATTERNS:
+        if pattern in lower:
+            return text, "Input contains disallowed content. Please rephrase."
+    return text, None
+
+
 def add_message(role: str, response, temp: float = None, top_p: float = None) -> None:
     """Append a message dict to the conversation history in session state."""
     if isinstance(response, tuple):
@@ -575,13 +593,19 @@ def setup_dialog():
         )
 
     if submitted:
-        if not st.session_state.dlg_user_name.strip():
+        name, name_err = sanitize_input(st.session_state.dlg_user_name, max_len=100)
+        role, role_err = sanitize_input(st.session_state.dlg_target_role, max_len=200)
+        if not name:
             st.error("Please enter your name.")
-        elif not st.session_state.dlg_target_role.strip():
+        elif not role:
             st.error("Please enter the role you're applying for.")
+        elif name_err:
+            st.error(f"Name: {name_err}")
+        elif role_err:
+            st.error(f"Role: {role_err}")
         else:
-            st.session_state.user_name          = st.session_state.dlg_user_name
-            st.session_state.target_role        = st.session_state.dlg_target_role
+            st.session_state.user_name          = name
+            st.session_state.target_role        = role
             st.session_state.persona            = st.session_state.dlg_persona
             st.session_state.difficulty         = st.session_state.dlg_difficulty
             st.session_state.interview_type     = st.session_state.get("interview_type", "Mixed")
