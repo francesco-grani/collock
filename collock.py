@@ -201,6 +201,9 @@ if "total_session_cost" not in st.session_state:
 if "app_critique" not in st.session_state:
     st.session_state.app_critique = None
 
+if "selected_model" not in st.session_state:
+    st.session_state.selected_model = "openai/gpt-5-nano"
+
 
 # endregion
 
@@ -323,7 +326,7 @@ def get_ai_response(
         )
         messages = [{"role": "system", "content": system_prompt}] + history
         response = client.chat.completions.create(
-            model="openai/gpt-5-nano",
+            model=st.session_state.get("selected_model", "openai/gpt-5-nano"),
             max_completion_tokens=800,
             reasoning_effort="low",
             messages=messages,
@@ -709,6 +712,18 @@ with st.sidebar:
     # ----- Advanced LLM settings (collapsed) -----
     with st.expander("⚙ LLM Settings", expanded=False):
         st.caption("Adjust how the AI generates its responses.")
+        _available_models = [
+            "openai/gpt-5-nano",
+            "openai/gpt-4.1-mini",
+            "anthropic/claude-haiku-4-5",
+            "mistralai/mistral-small",
+        ]
+        st.session_state.selected_model = st.selectbox(
+            "Model",
+            options=_available_models,
+            index=_available_models.index(st.session_state.selected_model),
+            help="Model used for interview questions and feedback.",
+        )
         st.session_state.temperature = st.slider(
             "Temperature",
             min_value=0.0, max_value=1.0,
