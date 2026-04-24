@@ -21,6 +21,9 @@ __pycache__/
 .vscode/
 *.code-workspace
 
+# Claude Code settings
+.claude/
+
 # Misc
 *.log
 
