@@ -1,0 +1,29 @@
+.st-key-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: white !important;
+    padding: 1rem;
+    border-radius: 0.5rem;
+}
+
+/* ---- Hide Streamlit chrome ---- */
+/* We keep the sidebar toggle (inside <header>) so users can open settings. */
+/* #MainMenu,
+footer,
+[data-testid="stToolbar"],
+[data-testid="stDecoration"],
+[data-testid="stStatusWidget"] {
+    display: none !important;
+    visibility: hidden !important;
+}
+    */
+
+/* Make the top header bar transparent instead of hiding it entirely,
+       so the sidebar collapse/expand arrow remains functional. */
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    border-bottom: none !important;
+}

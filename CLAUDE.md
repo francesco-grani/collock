@@ -19,7 +19,7 @@ Get a key at https://openrouter.ai/keys
 streamlit run Collock-stitch.py
 
 # Cinematic rewrite — glassmorphism card + full-screen portrait background
-streamlit run Collock-stitch-v1.py
+streamlit run collock.py
 
 # Standalone minimal chat demo
 streamlit run streamchat.py
@@ -68,10 +68,36 @@ FEEDBACK: [1-2 sentences of coaching]
 
 ### CSS injection pattern
 
-Both apps inject large CSS blocks via `st.markdown(..., unsafe_allow_html=True)` to override Streamlit's default styling. `Collock-stitch-v1.py` additionally renders full layout sections as raw HTML strings (dialogue card, HUD panel, session summary) inserted with `st.markdown(..., unsafe_allow_html=True)`. User-supplied text passed into these HTML strings must be escaped with `html.escape()` to prevent XSS.
+Both apps inject large CSS blocks via `st.markdown(..., unsafe_allow_html=True)` to override Streamlit's default styling. `collock.py` additionally renders full layout sections as raw HTML strings (dialogue card, HUD panel, session summary) inserted with `st.markdown(..., unsafe_allow_html=True)`. User-supplied text passed into these HTML strings must be escaped with `html.escape()` to prevent XSS.
+
+### Playwright UI testing
+
+Always enable tracing when running Playwright scripts. Use this boilerplate:
+
+```python
+from playwright.sync_api import sync_playwright
+import time
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    context = browser.new_context(viewport={"width": 1440, "height": 900})
+    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    page = context.new_page()
+
+    # ... test actions ...
+
+    context.tracing.stop(path="/tmp/collock_trace.zip")
+    browser.close()
+```
+
+Open the trace with:
+```bash
+.venv/bin/playwright show-trace /tmp/collock_trace.zip
+```
+Or drag the zip onto https://trace.playwright.dev
 
 ### `interface/` folder
 
 Contains the Stitch design tool artifacts:
 - `stitch-prompt.md` — the design brief sent to the Stitch UI generator
-- `stitch-result.html` — the HTML prototype output that `Collock-stitch-v1.py` faithfully reimplements in Streamlit
+- `stitch-result.html` — the HTML prototype output that `collock.py` faithfully reimplements in Streamlit

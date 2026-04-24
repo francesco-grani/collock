@@ -3,34 +3,35 @@
 # =============================================================================
 
 import os
+import sys
+import base64
 import html as html_lib
 from datetime import datetime
 import json
 from typing import Any
 import requests
 
+sys.path.insert(0, os.getcwd())
+
 import streamlit as st
+from streamlit_float import *
 from openai import OpenAI
 from dotenv import load_dotenv
-from collock_content import PERSONAS, QUESTION_BANKS, CODING_TASKS, fallback_question, get_img_prompt
+from defaults.collock_content import PERSONAS, QUESTION_BANKS, CODING_TASKS, fallback_question, get_img_prompt
 
 load_dotenv()
+float_init(theme=True, include_unstable_primary=False)
+
 
 
 # =============================================================================
-# PAGE CONFIG & CONSTANTS
+# region PAGE CONFIG & CONSTANTS
 # =============================================================================
 
-# The recruiter portrait used as the full-screen background.
-# Sourced directly from the Stitch HTML export — may expire; replace freely.
-RECRUITER_IMAGE_URL = (
-    "https://lh3.googleusercontent.com/aida-public/"
-    "AB6AXuAWpIDenUwWyzvNAKtMwOU4JM-2mklLEQq6g42Q-jQk_6tLcGlU_MBoXvGm"
-    "UIvINPKC8J1cWb5prAqbSst3rls1VEISC0_B4QCqEvVcp_e34fPi2WNEIh0DrDyIw"
-    "yz6CJGzc2oI3O5WWHlbDaEJTVxQ8z4X5jlHq-PZIHUFrK8hmgZyhbGnss2ZELoyU"
-    "lMSBDiTU6Yn1O9dj38wMx3huThCfYUgOeUI4igMOypJIfRwiO1QUUb5kpdgWh2-Pk"
-    "nsdpn8UMpIenXT58I"
-)
+# Default recruiter portrait — loaded from defaults/recruiter.png as a base64
+# data URI so it works without a network request and never expires.
+with open(os.path.join(os.getcwd(), "defaults", "recruiter.png"), "rb") as _f:
+    RECRUITER_IMAGE_URL = f"data:image/png;base64,{base64.b64encode(_f.read()).decode()}"
 
 # This must be the very first Streamlit call — sets the browser tab and layout.
 # initial_sidebar_state="collapsed" hides the sidebar by default for a
@@ -42,9 +43,10 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
+# endregion
 
 # =============================================================================
-# CSS — DARK CINEMATIC THEME
+# region CSS — DARK CINEMATIC THEME
 # =============================================================================
 # This is a large block of CSS injected into the page via st.markdown().
 # It does several things:
@@ -58,12 +60,13 @@ st.set_page_config(
 # NOTE: this is a plain triple-quoted string (no "f" prefix), so CSS curly
 # braces {} are fine here without escaping.
 
-st.markdown('<style>' + open('collock-styles.css').read() + '</style>', unsafe_allow_html=True)
+st.markdown('<style>' + open(os.path.join(os.getcwd(), 'collock-styles.css')).read() + '</style>', unsafe_allow_html=True)
 
+# endregion
 
 
 # =============================================================================
-# BACKGROUND IMAGE — full-screen, fixed, darkened
+# region BACKGROUND IMAGE
 # =============================================================================
 # We inject a fixed <div> with z-index: -1 that sits behind all Streamlit
 # content. It contains:
@@ -80,9 +83,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# endregion
 
 # =============================================================================
-# SESSION STATE INITIALISATION
+# region SESSION STATE INITIALISATION
 # =============================================================================
 # Streamlit re-runs the script top-to-bottom on every user interaction.
 # st.session_state persists values across those reruns.
@@ -180,6 +184,9 @@ if "img_generated_for_persona" not in st.session_state:
 if "pending_llm_call" not in st.session_state:
     st.session_state.pending_llm_call = False
 
+if "dlg_loading" not in st.session_state:
+    st.session_state.dlg_loading = False   # True while dialog shows loading spinner
+
 # Dedicated session state keys for dialog inputs — persists values across sidebar-triggered reruns
 if "dlg_user_name" not in st.session_state:
     st.session_state.dlg_user_name = ""
@@ -200,19 +207,25 @@ if "total_session_cost" not in st.session_state:
     st.session_state.total_session_cost = 0.0
 
 
+# endregion
+
 # =============================================================================
-# HELPER FUNCTIONS
+# region HELPER FUNCTIONS
 # =============================================================================
 
-def add_message(role: str, response: tuple) -> None:
+def add_message(role: str, response, temp: float = None, top_p: float = None) -> None:
     """Append a message dict to the conversation history in session state."""
-    
     if type(response) is tuple:
-        text,cost = response
+        text, cost = response
     else:
         text = response
         cost = 0.0
-    st.session_state.messages.append({"role": role, "content": text, "cost": cost})
+    msg = {"role": role, "content": text, "cost": cost}
+    if temp is not None:
+        msg["temp"] = temp
+    if top_p is not None:
+        msg["top_p"] = top_p
+    st.session_state.messages.append(msg)
 
 
 def reset_chat():
@@ -221,13 +234,8 @@ def reset_chat():
 
 
 
-def build_system_prompt(persona: str, role: str, difficulty: str, interview_type: str) -> str:
-    """
-    Build the hidden instruction string sent to the LLM with every API call.
-
-    The system prompt shapes the LLM's personality, question style, and
-    response formatting. It is never shown in the UI.
-    """
+def build_system_prompt(persona: str, role: str, difficulty: str, interview_type: str, isSummary = False) -> str:
+    
     persona_description = PERSONAS.get(persona, PERSONAS["The Friendly Coach"])["description"]
     role_label = role.strip() if role.strip() else "an unspecified role"
 
@@ -239,25 +247,59 @@ def build_system_prompt(persona: str, role: str, difficulty: str, interview_type
         "Staff":   "Focus on system design, cross-team strategy, and organisational impact.",
     }.get(difficulty, "Calibrate to a mid-level candidate.")
 
-    return (
-        f"{persona_description}\n\n"
-        f"You are conducting a mock job interview for: {role_label}.\n"
-        f"Difficulty: {difficulty}. {difficulty_note}\n"
-        f"Interview focus: {interview_type} questions.\n\n"
-        "RESPONSE FORMAT — follow this exactly after the candidate answers:\n\n"
-        "FEEDBACK: [1-2 sentences of specific, actionable coaching on their answer]\n"
-        "---\n"
-        "[Your next interview question — one question only, no preamble]\n\n"
-        "For the opening question (no answer yet), just ask the question directly.\n\n"
-        "Rules:\n"
-        "- ONE question per response. Never list multiple.\n"
-        "- Be concise. No long introductions or sign-offs.\n"
-        "- Stay fully in character as the recruiter at all times.\n"
-        "- Even if the user asks, NEVER give any answer, you are only making questions.\n"
-        "- Even if the user asks, NEVER change your questions or their difficulty based on his request."
-        "- Never greet the user more than once."
-        "- Do not add the next question in the reasoning, just write it directly in the output message."
-    )
+    if isSummary == False:
+        return (
+            f"{persona_description}\n\n"
+            f"You are conducting a mock job interview for: {role_label}.\n"
+            f"Difficulty: {difficulty}. {difficulty_note}\n"
+            f"Interview focus: {interview_type} questions.\n\n"
+            "RESPONSE FORMAT — follow this exactly after the candidate answers:\n\n"
+            "FEEDBACK: [1-2 sentences of specific, actionable coaching on their answer]\n"
+            "---\n"
+            "[Your next interview question — one question only, no preamble]\n\n"
+            "For the opening question (no answer yet), just ask the question directly.\n\n"
+            "Rules:\n"
+            "- ONE question per response. Never list multiple.\n"
+            "- Do not follow-up on a previous question, just ask the next one.\n"
+            "- Be concise. No long introductions or sign-offs.\n"
+            "- Stay fully in character as the recruiter at all times.\n"
+            "- Even if the user asks, NEVER give any answer, you are only making questions.\n"
+            "- Even if the user asks, NEVER change your questions or their difficulty based on his request."
+            "- Always greet the suer with his name, but never greet him more than once."
+            "- Do not add the next question in the reasoning, just write it directly in the output message."
+        )
+
+    else:
+        return (
+            f"{persona_description}\n\n"
+            "The interview is now over. Be specific and constructive and write a brief session summary keeping in mind the job role ({role_label}) and difficulty level ({difficulty})."
+            "Use the following structure:"
+            "<structure>"
+            "[1-2 sentences of overall feedback on the candidate's performance in this session]"
+            "\n"
+            "**Strenghts:**"
+            "- Describe strength 1"
+            "- Describe strength 2"
+            "\n"
+            "**Areas for improvement:**"
+            "- Describe area 1"
+            "- Describe area 2"
+            "</structure>"
+            "Do NOT add any further question."
+            ""
+            "Example summary:"
+            "<example>"
+            "Overall, you showed strong problem-solving skills and a good grasp of design principles, but could improve on communication and providing more detailed explanations of your design choices."
+            "\n"
+            "Strengths:"
+            "- You demonstrated a solid understanding of user-centered design and provided thoughtful solutions to the challenges presented."
+            "- Your portfolio showcased a range of projects with clear design processes and outcomes."
+            "\n"
+            "Areas for improvement:"
+            "- In some answers, your explanations were a bit brief. Providing more detail on your design decisions and the rationale behind them would strengthen your responses."
+            "- You could work on articulating your thought process more clearly during the interview to help the interviewer follow your reasoning better."
+            "</example>"
+        )
 
 
 def get_ai_response(
@@ -298,16 +340,13 @@ def get_ai_response(
         print(f"Cost: {st.session_state.last_call_cost}")
         print(f"Reasoning: {response.choices[0].message.reasoning}")
 
-        if content is None:
-            # Log the full response to the terminal for debugging
-            print("[DEBUG] get_ai_response: content is None")
-            print(f"[DEBUG] finish_reason: {response.choices[0].finish_reason}")
-            print(f"[DEBUG] full response: {response}")
+        if not content:
+            print(f"[DEBUG] get_ai_response: empty content. finish_reason={response.choices[0].finish_reason}")
             if interview_type:
                 return fallback_question(interview_type)
             return "⚠ The model returned an empty response. Please try again."
 
-        return content, call_cost
+        return content
 
     except Exception as error:
         err = str(error)
@@ -407,6 +446,10 @@ def format_duration(start: datetime, end: datetime) -> str:
 
 def render_debug_panel():
     with st.container(height=600):
+
+        st.markdown('<span class="debug-msg-role">🔧 system</span>', unsafe_allow_html=True)
+        st.code(build_system_prompt(persona, target_role, difficulty, interview_type), language=None)
+    
         st.markdown('<div class="debug-panel-header">LLM Stream</div>', unsafe_allow_html=True)
         messages = st.session_state.get("messages", [])
         if not messages:
@@ -416,37 +459,115 @@ def render_debug_panel():
                 role = msg.get("role", "unknown")
                 content = msg.get("content", "")
                 cost = msg.get("cost", 0.0)
-                MAX_SYS = 300
-                if role == "system":
-                    display = content[:MAX_SYS] + f"\n[…{len(content) - MAX_SYS} chars]" if len(content) > MAX_SYS else content
-                    badge = "🔧 system"
-                    cost = cost
-                elif role == "assistant":
-                    display = content
+                if role == "assistant":
                     badge = "🤖 assistant"
-                    cost = cost
+                    temp_val = msg.get("temp")
+                    top_p_val = msg.get("top_p")
+                    params = ""
+                    if temp_val is not None or top_p_val is not None:
+                        params = (
+                            f'<span class="debug-msg-params">'
+                            f'temp={temp_val:.2f} · top_p={top_p_val:.2f}'
+                            f'</span>'
+                        )
+                    st.markdown(
+                        f'<div class="debug-msg debug-msg-assistant">'
+                        f'<span class="debug-msg-role">{badge}{params}</span>'
+                        f'<pre class="debug-msg-content">{html_lib.escape(content)}</pre>'
+                        f'<span class="debug-msg-cost">{cost:.5f} €</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
                 else:
-                    display = content
                     badge = "👤 user"
-                st.markdown(
-                    f'<div class="debug-msg debug-msg-{role}">'
-                    f'<span class="debug-msg-role">{badge}</span>'
-                    f'<pre class="debug-msg-content">{html_lib.escape(display)}</pre>'
-                    f'<span>€{cost:.5f}</span>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+                    st.markdown(
+                        f'<div class="debug-msg debug-msg-user">'
+                        f'<span class="debug-msg-role">{badge}</span>'
+                        f'<pre class="debug-msg-content">{html_lib.escape(content)}</pre>'
+                        f'<span class="debug-msg-cost">{cost:.5f} €</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+        summary = st.session_state.get("session_summary")
+        if summary:
+            st.markdown(
+                f'<div class="debug-msg debug-msg-system">'
+                f'<span class="debug-msg-role">🔧 system · session summary</span>'
+                f'<pre class="debug-msg-content">{html_lib.escape(summary)}</pre>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+# endregion
 
 # =============================================================================
-# SETUP DIALOG — shown at startup and after Reset
+# region SETUP DIALOG
 # =============================================================================
 
 @st.dialog("Welcome to Collock 🎙", dismissible=False)
 def setup_dialog():
+    # Loading state — form was submitted, slow ops running inside the dialog
+    if st.session_state.dlg_loading:
+        persona   = st.session_state.persona
+        role      = st.session_state.target_role
+        diff      = st.session_state.difficulty
+        itype     = st.session_state.interview_type
+
+        if (not st.session_state.skip_img_generation
+                and st.session_state.img_generated_for_persona != persona):
+            with st.spinner("Generating recruiter portrait…"):
+                new_url = generate_recruiter_image(persona)
+            if new_url:
+                st.session_state.recruiter_image_url = new_url
+            st.session_state.img_generated_for_persona = persona
+        st.session_state.prev_persona = persona
+
+        prompt = build_system_prompt(persona, role, diff, itype)
+        st.session_state.started          = True
+        st.session_state.interview_ended  = False
+        st.session_state.start_time       = datetime.now()
+        st.session_state.end_time         = None
+        st.session_state.question_index   = 1
+        st.session_state.interview_type   = itype
+        st.session_state.active_persona   = persona
+        st.session_state.active_role      = role
+        st.session_state.active_difficulty = diff
+        st.session_state.last_feedback    = None
+        st.session_state.session_summary  = None
+        st.session_state.messages         = []
+        st.session_state.display_messages = []
+        st.session_state.question_coding  = False
+        st.session_state.last_call_cost   = None
+        st.session_state.total_session_cost = 0.0
+
+        opening_prompt = (
+            f"Start a {diff.lower()} difficulty mock interview for "
+            f"{role or 'an unspecified role'}. "
+            f"First greet the candidate whose name is {st.session_state.user_name} "
+            f"and then ask your first interview question now."
+        )
+        add_message("user", opening_prompt)
+
+        with st.spinner("Your recruiter is getting ready…"):
+            raw = get_ai_response(
+                st.session_state.messages, prompt,
+                st.session_state.temperature, st.session_state.top_p,
+                interview_type=itype,
+            )
+        add_message("assistant", raw, temp=st.session_state.temperature, top_p=st.session_state.top_p)
+        _, question = parse_ai_response(raw)
+        st.session_state.current_question  = question
+        st.session_state.display_messages  = [{"role": "assistant", "content": question}]
+        st.session_state.dlg_loading       = False
+        st.session_state.session_ready     = True
+        st.rerun()
+        return
+
+    # Normal form state
     st.markdown(
         "Set up your interview session below, then hit **Start** — your AI recruiter is ready."
     )
-
     _persona_options = list(PERSONAS.keys())
 
     with st.form("setup_form"):
@@ -462,10 +583,7 @@ def setup_dialog():
             options=["Intern", "Junior", "Mid", "Senior", "Staff"],
             key="dlg_difficulty",
         )
-        
         st.checkbox("Skip image generation", key="dlg_skip_img_generation")
-
-        
         submitted = st.form_submit_button(
             "▶ Start Interview", type="primary", use_container_width=True
         )
@@ -473,32 +591,26 @@ def setup_dialog():
     if submitted:
         if not st.session_state.dlg_user_name.strip():
             st.error("Please enter your name.")
-        
         elif not st.session_state.dlg_target_role.strip():
             st.error("Please enter the role you're applying for.")
         else:
-            st.session_state.user_name         = st.session_state.dlg_user_name
-            st.session_state.target_role       = st.session_state.dlg_target_role
-            st.session_state.persona           = st.session_state.dlg_persona
-            st.session_state.difficulty        = st.session_state.dlg_difficulty
+            st.session_state.user_name          = st.session_state.dlg_user_name
+            st.session_state.target_role        = st.session_state.dlg_target_role
+            st.session_state.persona            = st.session_state.dlg_persona
+            st.session_state.difficulty         = st.session_state.dlg_difficulty
+            st.session_state.interview_type     = st.session_state.get("interview_type", "Mixed")
             st.session_state.skip_img_generation = st.session_state.dlg_skip_img_generation
-            st.session_state.session_ready     = True
-            st.session_state.pending_start     = True
-            st.rerun()  # forces full app rerun — closes dialog, then pending_start handler fires
+            st.session_state.dlg_loading        = True   # Switch dialog to loading state
+            st.rerun()
 
 if not st.session_state.session_ready:
     setup_dialog()
 
-# Convert pending_start → trigger_start in a separate quick rerun so the dialog
-# is fully dismissed before any slow operation (image gen, LLM call) begins.
-if st.session_state.get("pending_start"):
-    del st.session_state["pending_start"]
-    st.session_state.trigger_start = True
-    st.rerun()
 
+# endregion
 
 # =============================================================================
-# SIDEBAR — CONFIGURATION & CONTROLS
+# region SIDEBAR — CONFIGURATION & CONTROLS
 # =============================================================================
 # The sidebar is collapsed by default. Users open it with the arrow button
 # in the top-left corner of the screen.
@@ -562,34 +674,23 @@ with st.sidebar:
             "Skip image generation"
             )
 
-        settings_applied = st.form_submit_button("Apply and reset", use_container_width=True)
+        settings_applied = st.form_submit_button("Apply and reset", type="primary", use_container_width=True)
 
     if settings_applied:
-        st.session_state.target_role   = _form_target_role
-        st.session_state.difficulty    = _form_difficulty
-        st.session_state.persona       = _form_persona
-        st.session_state.interview_type = _form_interview_type
+        st.session_state.target_role        = _form_target_role
+        st.session_state.difficulty         = _form_difficulty
+        st.session_state.persona            = _form_persona
+        st.session_state.interview_type     = _form_interview_type
         st.session_state.skip_img_generation = _form_skip_image
-        reset_chat()
+        st.session_state.trigger_apply_reset = True
+        st.rerun()
 
-    st.divider()
 
-    # ----- Session flow buttons (outside form — instant action) -----
-    col_a, col_b = st.columns(2)
-    with col_a:
-        next_clicked = st.button(
-            "→ Next Q",
-            use_container_width=True,
-            disabled=not st.session_state.started,
-        )
-    with col_b:
-        end_clicked = st.button(
-            "⏹ End",
-            use_container_width=True,
-            disabled=not st.session_state.started,
-        )
-
-    reset_clicked = st.button("↺ Reset", use_container_width=True)
+    end_clicked = st.button(
+        "⏹ End",
+        use_container_width=True,
+        disabled=not st.session_state.started,
+    )
     start_clicked = False  # Start is handled by the setup dialog only
 
     st.divider()
@@ -599,10 +700,10 @@ with st.sidebar:
         st.caption("Adjust how the AI generates its responses.")
         st.session_state.temperature = st.slider(
             "Temperature",
-            min_value=0.0, max_value=1.5,
+            min_value=0.0, max_value=1.0,
             value=st.session_state.temperature,
             step=0.05,
-            help="0 = deterministic. 1.5 = highly creative / unpredictable.",
+            help="0 = deterministic. 1.0 = highly creative / unpredictable.",
         )
         st.session_state.top_p = st.slider(
             "Top-p",
@@ -621,8 +722,10 @@ difficulty    = st.session_state.difficulty
 interview_type = st.session_state.interview_type
 
 
+# endregion
+
 # =============================================================================
-# PERSONA CHANGE — generate recruiter portrait when the user picks a new persona
+# region PERSONA CHANGE
 # =============================================================================
 # prev_persona is None only on the very first load (skip generation then).
 # On every subsequent persona change, call Gemini image generation and rerun
@@ -640,16 +743,18 @@ if persona != st.session_state.prev_persona:
     st.rerun()
 
 
+# endregion
+
 # =============================================================================
-# BUTTON LOGIC
+# region BUTTON LOGIC
 # =============================================================================
 
-# Consume the one-shot flag written by the setup dialog's Start button.
-start_from_modal = st.session_state.get("trigger_start", False)
-if start_from_modal:
-    del st.session_state["trigger_start"]
+# Consume the sidebar Apply and reset flag.
+apply_reset = st.session_state.get("trigger_apply_reset", False)
+if apply_reset:
+    del st.session_state["trigger_apply_reset"]
 
-if start_clicked or start_from_modal:
+if apply_reset:
     # Phase 1 — generate portrait if not already done for this persona
     if (
         not st.session_state.skip_img_generation
@@ -693,36 +798,17 @@ if start_clicked or start_from_modal:
             st.session_state.temperature, st.session_state.top_p,
             interview_type=interview_type,
         )
-    add_message("assistant", raw)
+    add_message("assistant", raw, temp=st.session_state.temperature, top_p=st.session_state.top_p)
     _, question = parse_ai_response(raw)
     st.session_state.current_question = question
     st.session_state.display_messages = [{"role": "assistant", "content": question}]
     st.rerun()
 
-if next_clicked and st.session_state.started:
-    prompt = build_system_prompt(
-        st.session_state.active_persona,
-        st.session_state.active_role,
-        st.session_state.active_difficulty,
-        st.session_state.interview_type,
-    )
-    add_message("user", "Please ask the next question.")
-    raw = get_ai_response(
-        st.session_state.messages, prompt,
-        st.session_state.temperature, st.session_state.top_p,
-        interview_type=st.session_state.interview_type,
-    )
-    add_message("assistant", raw)
-    feedback, question = parse_ai_response(raw)
-    if feedback:
-        st.session_state.last_feedback = feedback
-    st.session_state.current_question = question
-    st.session_state.display_messages.append({"role": "assistant", "content": question})
-    st.session_state.question_index = min(
-        st.session_state.question_index + 1,
-        st.session_state.question_total,
-    )
-    st.rerun()
+# Auto-end: if all questions have been delivered, trigger the end flow immediately.
+if (st.session_state.started
+        and not st.session_state.interview_ended
+        and st.session_state.question_index >= st.session_state.question_total):
+    end_clicked = True
 
 if end_clicked and st.session_state.started:
     st.session_state.started = False
@@ -737,41 +823,25 @@ if end_clicked and st.session_state.started:
         st.session_state.active_role,
         st.session_state.active_difficulty,
         st.session_state.interview_type,
+        isSummary=True,
     )
     summary_messages = st.session_state.messages + [{
         "role": "user",
         "content": (
-            "The interview is now over. Write a brief session summary (3-5 sentences): "
-            "overall impression, 2 strengths, 2 areas to improve. Be specific and constructive."
+            "The interview is now over, I just need one more thing from you: based on everything that was said in this session, write a brief performance summary for the candidate."
         ),
     }]
     st.session_state.session_summary = get_ai_response(
         summary_messages, prompt,
-        st.session_state.temperature, st.session_state.top_p,
+        0, st.session_state.top_p,
     )
     st.rerun()
 
-if reset_clicked:
-    st.session_state.started = False
-    st.session_state.interview_ended = False
-    st.session_state.question_index = 0
-    st.session_state.start_time = None
-    st.session_state.end_time = None
-    st.session_state.messages = []
-    st.session_state.display_messages = []
-    st.session_state.current_question = ""
-    st.session_state.last_feedback = None
-    st.session_state.session_summary = None
-    st.session_state.coding_task_index = 0
-    st.session_state.session_ready = False
-    st.session_state.img_generated_for_persona = None
-    st.session_state.last_call_cost = None
-    st.session_state.total_session_cost = 0.0
-    st.rerun()
 
+# endregion
 
 # =============================================================================
-# MAIN AREA — TOP HUD (brand pill + progress card)
+# region MAIN AREA
 # =============================================================================
 # Rendered as raw HTML so we can match the exact style from the HTML export:
 # a translucent brand pill on the left and a HUD progress card on the right.
@@ -782,6 +852,7 @@ if reset_clicked:
 
 with st.container(key="main-wrapper", horizontal_alignment="center"):
     with st.container(key="chat", width=900):
+        # region CHAT HISTORY
         # =============================================================================
         # MAIN AREA — CHAT HISTORY
         # =============================================================================
@@ -816,7 +887,7 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
                         st.session_state.temperature, st.session_state.top_p,
                         interview_type=st.session_state.interview_type,
                     )
-            add_message("assistant", _raw)
+            add_message("assistant", _raw, temp=st.session_state.temperature, top_p=st.session_state.top_p)
             _feedback, _question = parse_ai_response(_raw)
             if _feedback:
                 st.session_state.last_feedback = _feedback
@@ -829,13 +900,16 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
             st.rerun()
 
 
+        # endregion
+
+        # region SESSION SUMMARY
         # =============================================================================
         # MAIN AREA — SESSION SUMMARY
         # =============================================================================
         # Shown only after the user clicks End Session. Displays stats (questions
         # answered, answers given, duration) and an AI-generated performance summary.
 
-        if st.session_state.interview_ended and st.session_state.session_summary:
+        if st.session_state.interview_ended and st.session_state.session_summary is not None:
             st.markdown("<br>", unsafe_allow_html=True)
 
             # Calculate session duration from the recorded start and end datetimes
@@ -866,9 +940,12 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
             </div>
             """, unsafe_allow_html=True)
 
-            st.caption("Click  ↺ Reset  in the sidebar to start a new session.")
+            st.caption("<- Click  Apply and reset  in the sidebar to start a new session.")
 
 
+        # endregion
+
+        # region CHAT INPUT
         # =============================================================================
         # CHAT INPUT — answer submission, pinned to the bottom of the page
         # =============================================================================
@@ -880,27 +957,34 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
         #   3. Parse the response into (feedback, question)
         #   4. Update session state and trigger a page rerun
 
-        user_answer = st.chat_input(
-            "Type your response…",
-            disabled=not st.session_state.started,
-        )
+        
+
+        with st.container():
+            user_answer = st.chat_input(
+                "Type your response…",
+                disabled=not st.session_state.started,
+            )
+            # Lift the chat input above the floating debug panel at the bottom.
+            # The bottom value matches the collapsed expander header height (~3rem).
+            float_parent(css=float_css_helper(bottom="3.5rem", z_index="99", left="auto", right="auto"))
 
         if user_answer:
             st.session_state.display_messages.append({"role": "user", "content": user_answer})
-            if st.session_state.question_index >= st.session_state.question_total:
-                end_clicked = True
-            else:
-                add_message("user", user_answer)
-                st.session_state.pending_llm_call = True
-                st.rerun()
+            add_message("user", user_answer)
+            st.session_state.pending_llm_call = True
+            st.rerun()
 
-    with st.container(key="footer-wrapper", horizontal_alignment="center"):
-        with st.expander(label="LLM Debug", key="debugPanel", width=900):
-            with st.expander(label="LLM Stream"):
-                render_debug_panel()
-            
-            last = st.session_state.get("last_call_cost")
-            total = st.session_state.get("total_session_cost", 0.0)
-            c1, c2 = st.columns(2)
-            c1.metric("Last call cost", f"{last:.5f} €" if last is not None else "—")
-            c2.metric("Total session cost", f"{total:.5f} €")
+        with st.container(key="footer-wrapper", horizontal_alignment="center"):
+            float_parent(css=float_css_helper(bottom="0", z_index="100"))
+            with st.expander(label="LLM Debug", key="debugPanel", width=900):
+                with st.expander(label="LLM Stream"):
+                    render_debug_panel()
+                
+                last = st.session_state.get("last_call_cost")
+                total = st.session_state.get("total_session_cost", 0.0)
+                c1, c2 = st.columns(2)
+                c1.metric("Last call cost", f"{last:.5f} €" if last is not None else "—")
+                c2.metric("Total session cost", f"{total:.5f} €")
+
+        # endregion  (CHAT INPUT)
+    # endregion  (MAIN AREA)
