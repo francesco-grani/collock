@@ -5,3 +5,4 @@ streamlit>=1.33.0       # The web framework that renders all UI components
 openai>=1.30.0          # OpenAI-compatible SDK — used to call OpenRouter's API
 python-dotenv>=1.0.0    # Loads environment variables from a .env file
 streamlit-float>=0.3.0  # Floating containers / pinned UI elements
+requests>=2.31.0        # HTTP calls for image generation via OpenRouter
