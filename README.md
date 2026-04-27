@@ -1,29 +1,25 @@
 <div align="center">
 
-  # 🎙 Collock
+# 🎙 Collock
 
-  **AI-powered mock interview practice — cinematic, immersive, brutally honest.**
+**AI-powered mock interview practice — immersive, brutally honest.**
 
-  [![Live on Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://collock.streamlit.app)
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.33+-FF4B4B?logo=streamlit&logoColor=white)
+![OpenRouter](https://img.shields.io/badge/OpenRouter-API-6366f1)
 
-  ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
-  ![Streamlit](https://img.shields.io/badge/Streamlit-1.33+-FF4B4B?logo=streamlit&logoColor=white)
-  ![OpenRouter](https://img.shields.io/badge/OpenRouter-API-6366f1)
+[![Live on Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://collock.streamlit.app)
 
 </div>
 
 ---
 
-**Try it live →** [collock.streamlit.app](https://collock.streamlit.app) — deployed on Streamlit Community Cloud. No install required, just bring your OpenRouter API key.
-
----
-
-Collock drops you into a live mock interview with an AI recruiter. Configure your target role, pick a recruiter persona, choose a difficulty — and get grilled. Real feedback after every answer, a full session summary at the end.
+Collock drops you into a live mock interview with an AI recruiter. Configure your target role, pick a recruiter persona, choose a difficulty — and get grilled. Full session summary at the end.
 
 ## Features
 
 - **3 recruiter personas** — Friendly Coach, Tough Realist, Technical Deep-Diver, each with a generated portrait
-- **5 interview types** — General, Technical, Behavioral, Coding, Mixed
+- **5 interview types** — General, Technical, Behavioral, Mixed
 - **5 difficulty levels** — Intern → Staff, each calibrated to the right depth
 - **4 OpenAI models** — from `gpt-5-nano` (fast & cheap) to `gpt-5.4-mini` (highest quality)
 - **Per-answer feedback** — structured coaching after every response
@@ -33,12 +29,11 @@ Collock drops you into a live mock interview with an AI recruiter. Configure you
 
 ## Stack
 
-| Layer | Tech |
-|---|---|
-| UI | [Streamlit](https://streamlit.io) |
-| LLM | [OpenRouter](https://openrouter.ai) (OpenAI-compatible) |
-| Image gen | Google Gemini 2.5 Flash (via OpenRouter) |
-| Styling | Custom CSS — dark cinematic glassmorphism theme |
+| Layer     | Tech                                                    |
+| --------- | ------------------------------------------------------- |
+| UI        | [Streamlit](https://streamlit.io)                       |
+| LLM       | [OpenRouter](https://openrouter.ai) (OpenAI-compatible) |
+| Image gen | Google Gemini 2.5 Flash (via OpenRouter)                |
 
 ## Setup
 
@@ -53,7 +48,12 @@ echo "OPENROUTER_API_KEY=sk-or-..." > .env
 streamlit run collock.py
 ```
 
-Get an API key at [openrouter.ai/keys](https://openrouter.ai/keys).
+---
+
+**Try it live →** [collock.streamlit.app](https://collock.streamlit.app) — deployed on Streamlit Community Cloud. No install required.
+(this private repo was cloned to a [public one](https://github.com/francesco-grani/collock) in order to deploy on Streamlit)
+
+---
 
 ## Security testing
 
@@ -65,5 +65,5 @@ Jailbreak testing was performed using a Playwright script that fires 8 known pro
 ---
 
 <div align="center">
-  <sub>Built with Claude Code · Powered by OpenRouter</sub>
+  <sub>Built with Claude Code · Powered by OpenRouter & Streamlit</sub>
 </div>
