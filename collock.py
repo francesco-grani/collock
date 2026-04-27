@@ -845,7 +845,7 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
         # region CHAT HISTORY
         for message in st.session_state.display_messages:
             if message["role"] == "assistant":
-                with st.chat_message(message["role"], avatar=f"{st.session_state.get('recruiter_image_url', RECRUITER_IMAGE_URL)}"):
+                with st.chat_message(message["role"], avatar=st.session_state.get("recruiter_image_url") if st.session_state.get("recruiter_image_url", "").startswith("http") else "🎙"):
                     st.markdown(message["content"])
             else:
                 with st.chat_message(message["role"]):
@@ -853,7 +853,7 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
 
         if st.session_state.pending_llm_call:
             st.session_state.pending_llm_call = False
-            with st.chat_message("assistant", avatar=f"{st.session_state.get('recruiter_image_url', RECRUITER_IMAGE_URL)}"):
+            with st.chat_message("assistant", avatar=st.session_state.get("recruiter_image_url") if st.session_state.get("recruiter_image_url", "").startswith("http") else "🎙"):
                 with st.spinner("Thinking…"):
                     _prompt = build_system_prompt(
                         st.session_state.active_persona,
