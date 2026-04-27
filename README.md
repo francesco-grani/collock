@@ -4,6 +4,8 @@
 
   **AI-powered mock interview practice — cinematic, immersive, brutally honest.**
 
+  [![Live on Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://collock.streamlit.app)
+
   ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
   ![Streamlit](https://img.shields.io/badge/Streamlit-1.33+-FF4B4B?logo=streamlit&logoColor=white)
   ![OpenRouter](https://img.shields.io/badge/OpenRouter-API-6366f1)
