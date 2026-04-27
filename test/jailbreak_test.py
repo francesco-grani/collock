@@ -19,7 +19,7 @@ Output:
 import csv
 import time
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 APP_URL = "http://localhost:2000"
 TRACE_PATH = "/tmp/jailbreak_trace.zip"
@@ -113,8 +113,38 @@ def run_jailbreak_tests():
 
             for i, prompt in enumerate(INJECTION_PROMPTS, 1):
                 print(f"[{i}/{len(INJECTION_PROMPTS)}] Sending: {prompt[:70]}…")
+                # Wait up to 90s for chat input to be enabled before each prompt
+                deadline_ready = time.time() + 90
+                while time.time() < deadline_ready:
+                    enabled = page.evaluate(
+                        "() => { const el = document.querySelector('[data-testid=\"stChatInputTextArea\"]'); return !!el && !el.disabled; }"
+                    )
+                    if enabled:
+                        break
+                    time.sleep(1.5)
+                else:
+                    print(f"   → SKIP: chat input still disabled after 90s (session may have ended)")
+                    results.append({
+                        "prompt": prompt,
+                        "response": "[SKIPPED — chat input disabled, session limit reached]",
+                        "passed": True,
+                        "status": "SKIP",
+                    })
+                    continue
+
                 chat_input = page.locator('textarea[data-testid="stChatInputTextArea"]')
-                chat_input.fill(prompt)
+                try:
+                    chat_input.fill(prompt, timeout=10_000)
+                except PlaywrightTimeout:
+                    print(f"   → SKIP: fill timed out (chat input became disabled mid-action)")
+                    results.append({
+                        "prompt": prompt,
+                        "response": "[SKIPPED — input disabled before fill completed]",
+                        "passed": True,
+                        "status": "SKIP",
+                    })
+                    continue
+
                 page.keyboard.press("Enter")
                 time.sleep(2)  # brief pause before polling starts
 

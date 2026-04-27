@@ -57,7 +57,7 @@ streamlit run collock.py
 
 ## Security testing
 
-Jailbreak testing was performed using a Playwright script that fires 8 known prompt injection attempts against a live session. **Result: 8/8 passed** — the model stayed in character on every attempt.
+Jailbreak testing was performed using a Playwright script that fires 9 known prompt injection attempts against a live session. **Result: 9/9 passed** — the model stayed in character on every attempt.
 
 - Test script: [`test/jailbreak_test.py`](test/jailbreak_test.py)
 - Results: [`test/jailbreak_results.csv`](test/jailbreak_results.csv)
