@@ -899,7 +899,7 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
                 with st.chat_message(message["role"], avatar=st.session_state.get("recruiter_image_url") if st.session_state.get("recruiter_image_url", "").startswith("http") else "🎙"):
                     st.markdown(message["content"])
             else:
-                with st.chat_message(message["role"], avatar=""):
+                with st.chat_message(message["role"], avatar="👤"):
                     st.markdown(message["content"])
 
         if st.session_state.pending_llm_call:
