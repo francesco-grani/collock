@@ -1,6 +1,6 @@
 # Prompt Engineering Techniques — Collock
 
-This document describes the 5 prompt engineering techniques used (or proposed) in Collock's system prompt. Review and approve before integrating into `build_system_prompt()`.
+This document describes the 5 prompt engineering techniques used (or proposed) in Collock's system prompt.
 
 ---
 
@@ -11,6 +11,7 @@ This document describes the 5 prompt engineering techniques used (or proposed) i
 **Status:** ✅ Currently in use (baseline)
 
 **Prompt excerpt:**
+
 ```
 You are conducting a mock job interview for: {role}.
 Difficulty: {difficulty}. {difficulty_note}
@@ -31,9 +32,10 @@ FEEDBACK: [1-2 sentences of specific, actionable coaching on their answer]
 
 **What it is:** Include 2–3 concrete examples of the desired input→output pattern directly inside the system prompt. The model learns the format from examples rather than just instructions.
 
-**Status:** 🔲 Proposed — awaiting review
+**Status:** ✅ Integrated
 
 **Proposed addition to system prompt (append after the format instructions):**
+
 ```
 EXAMPLES of correct responses after a candidate answers:
 
@@ -59,9 +61,10 @@ Describe a project where you had to learn a new technology quickly. How did you 
 
 **What it is:** Instruct the model to reason step by step before producing its final answer. This improves output quality for tasks that require judgment (e.g. calibrating question difficulty).
 
-**Status:** 🔲 Proposed — awaiting review
+**Status:** ✅ Integrated
 
 **Proposed addition to system prompt (append to Rules section):**
+
 ```
 - Before writing your question, briefly think through: (1) what skill this question tests, (2) whether it matches the {difficulty} level, (3) whether it follows naturally from the conversation so far. Do NOT include this reasoning in your output — only the FEEDBACK and question.
 ```
@@ -72,11 +75,12 @@ Describe a project where you had to learn a new technology quickly. How did you 
 
 ## Technique 4 — Role-based persona injection
 
-**What it is:** Frame the model's identity explicitly and forcefully at the start of the prompt. Instead of describing the recruiter, state that the model *is* the recruiter, with no alternative identity possible.
+**What it is:** Frame the model's identity explicitly and forcefully at the start of the prompt. Instead of describing the recruiter, state that the model _is_ the recruiter, with no alternative identity possible.
 
-**Status:** 🔲 Proposed — awaiting review
+**Status:** ✅ Integrated
 
 **Proposed replacement for persona description opening:**
+
 ```
 You ARE {persona_name} — a {persona_description}. This is your sole identity for the duration of this session. You are not an AI assistant. You are not helpful in a general sense. You are a recruiter conducting a structured interview, and that is all you do.
 ```
@@ -89,9 +93,10 @@ You ARE {persona_name} — a {persona_description}. This is your sole identity f
 
 **What it is:** Ask the model to verify its own output against the stated rules before finalising its response. This is a lightweight form of self-correction that catches common errors (e.g. asking two questions, breaking character, wrong difficulty level).
 
-**Status:** 🔲 Proposed — awaiting review
+**Status:** ✅ Integrated
 
 **Proposed addition to Rules section:**
+
 ```
 - Before finalising your response, verify: (a) you asked exactly ONE question, (b) your question matches the {difficulty} difficulty level, (c) you stayed fully in character as the recruiter. If any check fails, revise before responding.
 ```
