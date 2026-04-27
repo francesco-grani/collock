@@ -407,11 +407,17 @@ def generate_recruiter_image(persona_name: str) -> str | None:
         
         # The generated image will be in the assistant message
         if result.get("choices"):
+            # Track image generation cost alongside LLM call costs
+            img_cost = result.get("usage", {}).get("cost")
+            if img_cost is not None:
+                st.session_state.total_session_cost = (
+                    st.session_state.get("total_session_cost", 0.0) + float(img_cost)
+                )
+
             message = result["choices"][0]["message"]
             if message.get("images"):
                 for image in message["images"]:
-                    image_url = image["image_url"]["url"]  # Base64 data URL
-                    print(f"Generated image: {image_url[:50]}...")
+                    image_url = image["image_url"]["url"]
                     return image_url
 
     except Exception as e:
