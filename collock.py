@@ -571,9 +571,9 @@ def setup_dialog():
 
         opening_prompt = (
             f"Start a {diff.lower()} difficulty mock interview for "
-            f"{role or 'an unspecified role'}. "
+            f"{'a '+ role.lower()+' role' if role.strip() else 'an unspecified role'}. "
             f"First greet the candidate whose name is {st.session_state.user_name} "
-            f"and then ask your first interview question now."
+            f"and then ask your first interview question."
         )
         add_message("user", opening_prompt)
 
@@ -899,7 +899,7 @@ with st.container(key="main-wrapper", horizontal_alignment="center"):
                 with st.chat_message(message["role"], avatar=st.session_state.get("recruiter_image_url") if st.session_state.get("recruiter_image_url", "").startswith("http") else "🎙"):
                     st.markdown(message["content"])
             else:
-                with st.chat_message(message["role"], avatar="👤"):
+                with st.chat_message(message["role"], avatar=""):
                     st.markdown(message["content"])
 
         if st.session_state.pending_llm_call:
