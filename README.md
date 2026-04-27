@@ -14,6 +14,10 @@
 
 ---
 
+**Try it live →** [collock.streamlit.app](https://collock.streamlit.app) — deployed on Streamlit Community Cloud. No install required, just bring your OpenRouter API key.
+
+---
+
 Collock drops you into a live mock interview with an AI recruiter. Configure your target role, pick a recruiter persona, choose a difficulty — and get grilled. Real feedback after every answer, a full session summary at the end.
 
 ## Features
